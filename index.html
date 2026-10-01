@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hourly UTC Church Bell</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1a1a24;
+            color: #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        .card {
+            background: #252533;
+            padding: 2.5rem;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            text-align: center;
+            max-width: 400px;
+            width: 90%;
+        }
+
+        h1 {
+            margin-top: 0;
+            color: #ffca28;
+            font-size: 1.8rem;
+        }
+
+        .clock {
+            font-size: 2.5rem;
+            font-weight: bold;
+            font-family: monospace;
+            margin: 1.5rem 0;
+            letter-spacing: 2px;
+            color: #ffffff;
+        }
+
+        .status {
+            font-size: 0.95rem;
+            color: #a0a0b0;
+            margin-bottom: 2rem;
+        }
+
+        button {
+            background-color: #ffca28;
+            color: #1a1a24;
+            border: none;
+            padding: 12px 24px;
+            font-size: 1rem;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        button:hover {
+            background-color: #ffd54f;
+            transform: translateY(-2px);
+        }
+
+        button:disabled {
+            background-color: #4a4a5a;
+            color: #8a8a9a;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #ff5252;
+            margin-right: 8px;
+        }
+
+        .indicator.active {
+            background-color: #4caf50;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h1>Church Bell Chime</h1>
+        <div class="clock" id="utcClock">00:00:00 UTC</div>
+        <div class="status">
+            <span class="indicator" id="statusIndicator"></span>
+            <span id="statusText">Audio context disabled</span>
+        </div>
+        <button id="enableBtn" onclick="enableAudio()">Enable Hourly Bell</button>
+    </div>
+
+    <script>
+        let audioCtx = null;
+        let isAudioEnabled = false;
+        let hasChimedThisHour = false;
+
+        // Initialize Web Audio API on user interaction (browsers block auto-audio)
+        function enableAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            
+            isAudioEnabled = true;
+            document.getElementById('statusIndicator').classList.add('active');
+            document.getElementById('statusText').innerText = "Active - Will ring 7 times on the hour (UTC)";
+            
+            const btn = document.getElementById('enableBtn');
+            btn.innerText = "Audio Active";
+            btn.disabled = true;
+
+            // Optional: Test bell once upon activating (uncomment if desired)
+            // ringChurchBell(7);
+        }
+
+        // Synthesizes a complex, harmonic church bell sound using Web Audio API
+        function playBellTone(time) {
+            if (!audioCtx) return;
+
+            // Fundamental pitch of a heavy bronze church bell (around E3 ~164Hz)
+            const fundamental = 164.81;
+
+            // Common overtone ratios for church bells (Hum, Prime, Tierce, Quint, Nominal)
+            const partials = [
+                { ratio: 0.5,  gain: 0.4, decay: 6.0 }, // Hum tone (1 octave below)
+                { ratio: 1.0,  gain: 0.8, decay: 4.5 }, // Prime (fundamental)
+                { ratio: 1.2,  gain: 0.5, decay: 3.5 }, // Minor third
+                { ratio: 1.5,  gain: 0.3, decay: 3.0 }, // Fifth
+                { ratio: 2.0,  gain: 0.6, decay: 2.5 }, // Nominal (1 octave above)
+                { ratio: 2.6,  gain: 0.2, decay: 1.5 }, // Major 10th
+                { ratio: 3.0,  gain: 0.1, decay: 1.0 }  // High shimmer
+            ];
+
+            partials.forEach(p => {
+                const osc = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(fundamental * p.ratio, time);
+
+                // Envelope: instant strike, exponential decay
+                gainNode.gain.setValueAtTime(0.001, time);
+                gainNode.gain.exponentialRampToValueAtTime(p.gain, time + 0.01); 
+                gainNode.gain.exponentialRampToValueAtTime(0.0001, time + p.decay);
+
+                osc.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+
+                osc.start(time);
+                osc.stop(time + p.decay);
+            });
+        }
+
+        // Rings the bell N times consecutively with a pause between rings
+        function ringChurchBell(count) {
+            if (!isAudioEnabled || !audioCtx) return;
+
+            const interval = 3.5; // Seconds between each stroke
+            const startTime = audioCtx.currentTime + 0.1;
+
+            for (let i = 0; i < count; i++) {
+                playBellTone(startTime + (i * interval));
+            }
+        }
+
+        // Clock loop to update display and check UTC time
+        function updateClock() {
+            const now = new Date();
+
+            // Get UTC units
+            const hours = now.getUTCHours();
+            const minutes = now.getUTCMinutes();
+            const seconds = now.getUTCSeconds();
+
+            // Format clock display
+            const hStr = String(hours).padStart(2, '0');
+            const mStr = String(minutes).padStart(2, '0');
+            const sStr = String(seconds).padStart(2, '0');
+            document.getElementById('utcClock').innerText = `${hStr}:${mStr}:${sStr} UTC`;
+
+            // Trigger chime at top of the hour (Minute 00, Second 00)
+            if (minutes === 0 && seconds === 0) {
+                if (!hasChimedThisHour) {
+                    ringChurchBell(7);
+                    hasChimedThisHour = true; // Prevent multiple triggers in same second
+                }
+            } else {
+                hasChimedThisHour = false; // Reset lock during rest of hour
+            }
+        }
+
+        // Run clock every second
+        setInterval(updateClock, 1000);
+        updateClock();
+    </script>
+</body>
+</html>
